@@ -20,6 +20,9 @@ import javax.crypto.spec.PBEKeySpec
  * - [unlockStartsAt] / [unlockEndsAt] : fenetre pendant laquelle les reglages sont ouverts.
  *   Le bon code ne deverrouille pas tout de suite : il lance une attente de [WAIT_MS].
  * - [blockedUntil] : apres trop d'erreurs, plus aucune saisie avant cette date.
+ * - [guardOpenUntil] : le bon code ouvre tout de suite, jusqu'a cette date, les protections
+ *   hors d'Instagram (Parametres, desinstallation). Le blocage des Reels, lui,
+ *   garde l'attente de [LockManager.WAIT_MS].
  */
 data class LockState(
     val hasCode: Boolean = false,
@@ -27,10 +30,15 @@ data class LockState(
     val unlockEndsAt: Long = 0L,
     val failedAttempts: Int = 0,
     val blockedUntil: Long = 0L,
+    val guardOpenUntil: Long = 0L,
 ) {
     /** Vrai quand les reglages sont proteges (code defini et hors fenetre de deverrouillage). */
     fun isLocked(now: Long = System.currentTimeMillis()): Boolean =
         hasCode && now !in unlockStartsAt until unlockEndsAt
+
+    /** Vrai quand les pages des Parametres qui montrent EndScroll doivent etre refermees. */
+    fun isGuardLocked(now: Long = System.currentTimeMillis()): Boolean =
+        isLocked(now) && now >= guardOpenUntil
 
     fun isWaitingForUnlock(now: Long = System.currentTimeMillis()): Boolean =
         hasCode && now < unlockStartsAt
@@ -55,6 +63,7 @@ class LockManager(private val context: Context) {
     private val unlockEndsKey = longPreferencesKey("lock.unlock_ends")
     private val failedKey = intPreferencesKey("lock.failed")
     private val blockedUntilKey = longPreferencesKey("lock.blocked_until")
+    private val guardOpenUntilKey = longPreferencesKey("lock.guard_open_until")
 
     val state: Flow<LockState> = context.dataStore.data.map { p ->
         LockState(
@@ -63,6 +72,7 @@ class LockManager(private val context: Context) {
             unlockEndsAt = p[unlockEndsKey] ?: 0L,
             failedAttempts = p[failedKey] ?: 0,
             blockedUntil = p[blockedUntilKey] ?: 0L,
+            guardOpenUntil = p[guardOpenUntilKey] ?: 0L,
         )
     }
 
@@ -79,6 +89,7 @@ class LockManager(private val context: Context) {
             // Le verrou s'applique tout de suite
             p[unlockStartsKey] = 0L
             p[unlockEndsKey] = 0L
+            p[guardOpenUntilKey] = 0L
         }
         hash.fill(0)
     }
@@ -92,6 +103,7 @@ class LockManager(private val context: Context) {
             p[blockedUntilKey] = 0L
             p[unlockStartsKey] = 0L
             p[unlockEndsKey] = 0L
+            p[guardOpenUntilKey] = 0L
         }
     }
 
@@ -100,6 +112,7 @@ class LockManager(private val context: Context) {
         context.dataStore.edit { p ->
             p[unlockStartsKey] = 0L
             p[unlockEndsKey] = 0L
+            p[guardOpenUntilKey] = 0L
         }
     }
 
@@ -126,6 +139,7 @@ class LockManager(private val context: Context) {
                 p[blockedUntilKey] = 0L
                 p[unlockStartsKey] = startsAt
                 p[unlockEndsKey] = startsAt + OPEN_MS
+                p[guardOpenUntilKey] = now + GUARD_OPEN_MS
             }
             UnlockResult.Accepted(startsAt)
         } else {
@@ -159,6 +173,9 @@ class LockManager(private val context: Context) {
 
         /** Duree pendant laquelle les reglages restent ouverts. */
         const val OPEN_MS = 5 * 60_000L
+
+        /** Duree pendant laquelle les Parametres sont libres, des le bon code. */
+        const val GUARD_OPEN_MS = 15 * 60_000L
 
         private const val ITERATIONS = 210_000
         private const val KEY_BITS = 256

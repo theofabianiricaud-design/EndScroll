@@ -32,7 +32,7 @@ extensions.configure<ApplicationExtension> {
     // ... Application Version ...
     val majorUpdateVersion = 1
     val minorUpdateVersion = 0
-    val patchVersion = 14
+    val patchVersion = 15
 
     val mVersionCode = majorUpdateVersion.times(10_000)
         .plus(minorUpdateVersion.times(100))

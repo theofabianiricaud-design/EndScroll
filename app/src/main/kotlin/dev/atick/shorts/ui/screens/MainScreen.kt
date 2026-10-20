@@ -255,9 +255,17 @@ private fun LockedContent(state: ServiceState, viewModel: MainViewModel) {
     val now = state.now
     LabelRow(Icons.Rounded.Lock, "Verrouillé")
 
+    if (now < lock.guardOpenUntil) {
+        Text(
+            "Paramètres et désinstallation libres encore ${formatDuration(lock.guardOpenUntil - now)}.",
+            style = MaterialTheme.typography.bodyLarge,
+            fontWeight = FontWeight.SemiBold,
+        )
+    }
+
     if (lock.isWaitingForUnlock(now)) {
         Text(
-            "Code accepté. Ouverture dans ${formatDuration(lock.unlockStartsAt - now)}.",
+            "Blocage des Reels modifiable dans ${formatDuration(lock.unlockStartsAt - now)}.",
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
         )

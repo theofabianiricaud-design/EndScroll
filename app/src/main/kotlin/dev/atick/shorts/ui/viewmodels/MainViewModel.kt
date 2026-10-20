@@ -194,8 +194,9 @@ class MainViewModel(
         viewModelScope.launch {
             when (val result = lockManager.tryUnlock(copy)) {
                 is UnlockResult.Accepted -> say(
-                    "Code bon. Ouverture dans ${LockManager.WAIT_MS / 60_000} minutes, " +
-                        "pour ${LockManager.OPEN_MS / 60_000} minutes.",
+                    "Code bon. Paramètres et désinstallation libres tout de suite, " +
+                        "pendant ${LockManager.GUARD_OPEN_MS / 60_000} minutes. " +
+                        "Couper le blocage des Reels : dans ${LockManager.WAIT_MS / 60_000} minutes.",
                 )
                 is UnlockResult.Rejected -> say("Code faux.")
                 is UnlockResult.TooSoon -> say("Trop d'erreurs : attends la fin du blocage.")

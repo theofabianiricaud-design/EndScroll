@@ -20,8 +20,11 @@ package dev.atick.shorts.services
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
+import android.content.Intent
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
+import android.widget.Toast
+import dev.atick.shorts.MainActivity
 import dev.atick.shorts.R
 import dev.atick.shorts.services.detectors.InstagramReelsDetector
 import dev.atick.shorts.services.detectors.ShortFormContentDetector
@@ -44,7 +47,9 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * Service d'accessibilite :
  *  - renvoie en arriere des qu'un Reel ou un Short s'affiche (TikTok : retour a l'accueil) ;
- *  - n'agit jamais ailleurs : Parametres, installateur et autres applis restent libres.
+ *  - verrou ferme : referme toute page des Parametres ou de l'installateur qui affiche
+ *    le nom du bloqueur, et ouvre EndScroll pour entrer le code. Le bon code libere
+ *    ces pages tout de suite pour 15 minutes.
  *
  * Rien n'est enregistre ni envoye : l'ecran est lu en memoire puis oublie.
  */
@@ -64,6 +69,8 @@ class ShortFormContentBlockerService : AccessibilityService() {
 
     @Volatile
     private var trackedPackages: Set<String> = emptySet()
+
+    private val appLabel by lazy { getString(R.string.app_name) }
 
     private val detectors: Map<String, ShortFormContentDetector> by lazy {
         buildMap {
@@ -86,8 +93,8 @@ class ShortFormContentBlockerService : AccessibilityService() {
                 trackedPackages = expanded
                 lockState = lock
 
-                // On n'ecoute que les applis bloquees, jamais les Parametres
-                val listened = expanded
+                // On n'ecoute les Parametres que si un code protege le bloqueur
+                val listened = if (lock.hasCode) expanded + PackageConstants.GUARDED_PACKAGES else expanded
                 Timber.d("Packages ecoutes : ${listened.joinToString()}")
                 serviceInfo = AccessibilityServiceInfo().apply {
                     eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
@@ -113,6 +120,11 @@ class ShortFormContentBlockerService : AccessibilityService() {
         if (!relevant) return
         val packageName = event.packageName?.toString() ?: return
 
+        if (packageName in PackageConstants.GUARDED_PACKAGES) {
+            guardSettings(packageName)
+            return
+        }
+
         if (packageName !in trackedPackages) return
         val detector = detectors[packageName] ?: return
 
@@ -127,6 +139,22 @@ class ShortFormContentBlockerService : AccessibilityService() {
                 }
                 break
             }
+        }
+    }
+
+    /** Referme la page si elle montre le bloqueur, sauf pendant les 15 minutes ouvertes par le code. */
+    private fun guardSettings(packageName: String) {
+        if (!lockState.isGuardLocked()) return
+        val root = rootInActiveWindow ?: return
+        val mentionsUs = root.findAccessibilityNodeInfosByText(appLabel).isNotEmpty()
+        if (!mentionsUs) return
+        Timber.i("[$packageName] Page de reglage du bloqueur refermee (verrou ferme)")
+        if (shouldPerformAction("guard_$packageName")) {
+            performGlobalAction(GLOBAL_ACTION_HOME)
+            Toast.makeText(this, R.string.guard_message, Toast.LENGTH_LONG).show()
+            startActivity(
+                Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
         }
     }
 

@@ -22,7 +22,8 @@
     <string name="service_active">Service Active</string>
     <string name="service_running">Content blocker is running</string>
     <string name="setup_required">Setup Required</string>
-    <string name="setup_description">Bloque les Reels Instagram et les Shorts YouTube. Il n’agit que dans ces applis.</string>
+    <string name="setup_description">Bloque les Reels Instagram et les Shorts YouTube, et protège ses réglages par un code.</string>
+    <string name="guard_message">EndScroll est verrouillé : entre ton code dans l’appli, les Paramètres seront libres 15 minutes.</string>
     
     <!-- Tracked Packages -->
     <string name="tracked_apps_title">Tracked Apps</string>
