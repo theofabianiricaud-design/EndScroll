@@ -95,7 +95,8 @@ class MainViewModel(
     }
 
     fun showDisclosure() {
-        if (isLocked) {
+        // Tant que le service n'est pas actif, il n'y a rien a proteger : on laisse activer.
+        if (isLocked && _serviceState.value.isGranted) {
             say("Verrouillé : déverrouille avec ton code d'abord.")
             return
         }
