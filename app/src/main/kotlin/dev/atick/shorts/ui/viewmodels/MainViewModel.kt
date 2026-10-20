@@ -1,11 +1,12 @@
 /*
  * Copyright 2025 Atick Faisal
+ * Modifie en 2026 : verrouillage par code.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,7 +22,11 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.atick.shorts.models.TrackedPackage
+import dev.atick.shorts.services.ShortFormContentBlockerService
 import dev.atick.shorts.utils.AccessibilityServiceManager
+import dev.atick.shorts.utils.LockManager
+import dev.atick.shorts.utils.LockState
+import dev.atick.shorts.utils.UnlockResult
 import dev.atick.shorts.utils.UserPreferencesProvider
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,39 +37,29 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
-/**
- * UI state for the main screen.
- *
- * @property isGranted Whether accessibility service permission is granted
- * @property isChecking Whether a permission check is in progress
- * @property trackedPackages List of available packages with their enabled status
- * @property showDisclosure Whether to show disclosure screen
- */
 data class ServiceState(
     val isGranted: Boolean = false,
     val isChecking: Boolean = false,
     val trackedPackages: List<TrackedPackage> = emptyList(),
     val showDisclosure: Boolean = false,
+    val lock: LockState = LockState(),
+    /** Heure courante, rafraichie chaque seconde pour les comptes a rebours. */
+    val now: Long = System.currentTimeMillis(),
+    /** Message a afficher une fois (erreur de code, etc.). */
+    val message: String? = null,
+    /** Code genere a montrer une seule fois. */
+    val generatedCode: String? = null,
 )
 
-/**
- * ViewModel for the main screen.
- *
- * Manages accessibility service permission state, package tracking preferences,
- * and coordinates with the settings screen for permission requests.
- *
- * @property application Application instance for context access
- */
 class MainViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
 
-    companion object {
-        private const val SERVICE_NAME: String =
-            "dev.atick.shorts/dev.atick.shorts.services.ShortFormContentBlockerService"
-    }
+    private val serviceName: String =
+        "${application.packageName}/${ShortFormContentBlockerService::class.java.name}"
 
     private val userPreferencesProvider = UserPreferencesProvider(application)
+    private val lockManager = LockManager(application)
 
     private val _serviceState = MutableStateFlow(ServiceState())
     val serviceState: StateFlow<ServiceState> = _serviceState.asStateFlow()
@@ -72,148 +67,164 @@ class MainViewModel(
     private var isMonitoring = false
 
     init {
-        Timber.d("MainViewModel initialized")
-        observeTrackedPackages()
-    }
-
-    /**
-     * Observes tracked packages from preferences and updates UI state.
-     */
-    private fun observeTrackedPackages() {
         viewModelScope.launch {
             userPreferencesProvider.getTrackedPackagesWithStatus().collect { packages ->
-                Timber.d(
-                    "Tracked packages updated: ${
-                        packages.filter { it.isEnabled }.map { it.displayName }
-                    }",
-                )
                 _serviceState.update { it.copy(trackedPackages = packages) }
             }
         }
-    }
-
-    /**
-     * Check accessibility service status.
-     * This is called automatically on lifecycle resume and periodically.
-     */
-    fun checkPermission(context: Context) {
         viewModelScope.launch {
-            Timber.d("Checking accessibility service status")
-            _serviceState.update { it.copy(isChecking = true) }
-
-            val isGranted = AccessibilityServiceManager.isAccessibilityServiceEnabled(
-                context,
-                SERVICE_NAME,
-            )
-
-            _serviceState.update {
-                it.copy(
-                    isGranted = isGranted,
-                    isChecking = false,
-                )
+            lockManager.state.collect { lock -> _serviceState.update { it.copy(lock = lock) } }
+        }
+        viewModelScope.launch {
+            while (isActive) {
+                _serviceState.update { it.copy(now = System.currentTimeMillis()) }
+                delay(1000L)
             }
-
-            Timber.i("Service check complete: isGranted=$isGranted")
         }
     }
 
-    /**
-     * Show disclosure screen.
-     */
+    private val isLocked: Boolean
+        get() = _serviceState.value.lock.isLocked()
+
+    fun checkPermission(context: Context) {
+        viewModelScope.launch {
+            _serviceState.update { it.copy(isChecking = true) }
+            val isGranted = AccessibilityServiceManager.isAccessibilityServiceEnabled(context, serviceName)
+            _serviceState.update { it.copy(isGranted = isGranted, isChecking = false) }
+        }
+    }
+
     fun showDisclosure() {
-        Timber.d("Showing disclosure screen")
+        if (isLocked) {
+            say("Verrouillé : déverrouille avec ton code d'abord.")
+            return
+        }
         _serviceState.update { it.copy(showDisclosure = true) }
     }
 
-    /**
-     * Hide disclosure screen.
-     */
     fun hideDisclosure() {
-        Timber.d("Hiding disclosure screen")
         _serviceState.update { it.copy(showDisclosure = false) }
     }
 
-    /**
-     * Accept disclosure and open accessibility settings.
-     * Marks disclosure as accepted and opens system settings.
-     */
     fun acceptDisclosure(context: Context) {
-        Timber.i("Disclosure accepted - opening accessibility settings")
-        viewModelScope.launch {
-            userPreferencesProvider.setDisclosureAccepted(true)
-        }
+        viewModelScope.launch { userPreferencesProvider.setDisclosureAccepted(true) }
         hideDisclosure()
         openAccessibilitySettings(context)
     }
 
-    /**
-     * Open Android accessibility settings page.
-     * Automatically starts monitoring for service status changes.
-     */
     fun openAccessibilitySettings(context: Context) {
-        Timber.d("Opening accessibility settings")
         AccessibilityServiceManager.openAccessibilitySettings(context)
         startMonitoring(context)
     }
 
-    /**
-     * Start monitoring permission changes when user goes to settings.
-     * Checks every 1 second while monitoring is active.
-     */
     private fun startMonitoring(context: Context) {
-        if (isMonitoring) {
-            Timber.v("Already monitoring permission changes")
-            return
-        }
-
+        if (isMonitoring) return
         isMonitoring = true
-        Timber.d("Starting permission monitoring (1s interval)")
-
         viewModelScope.launch {
             while (isActive && isMonitoring) {
                 delay(1000L)
                 checkPermission(context)
-
-                // Stop monitoring if service is enabled
                 if (_serviceState.value.isGranted) {
-                    Timber.i("Permission granted - stopping monitoring")
-                    stopMonitoring()
+                    isMonitoring = false
                     break
                 }
             }
         }
     }
 
-    /**
-     * Stop monitoring permission changes.
-     */
-    private fun stopMonitoring() {
-        Timber.d("Stopping permission monitoring")
-        isMonitoring = false
-    }
-
-    /**
-     * Called when app resumes from background.
-     * Performs a fresh permission check.
-     */
     fun onResume(context: Context) {
-        Timber.d("ViewModel onResume - checking permission")
         checkPermission(context)
     }
 
-    /**
-     * Toggle tracking for a specific package.
-     */
+    /** Activer un blocage est toujours permis ; le couper demande le verrou ouvert. */
     fun togglePackageTracking(packageName: String, enabled: Boolean) {
-        Timber.i("Toggling package tracking: $packageName -> $enabled")
-        viewModelScope.launch {
-            userPreferencesProvider.togglePackage(packageName, enabled)
+        if (!enabled && isLocked) {
+            say("Verrouillé : impossible de couper un blocage sans le code.")
+            return
         }
+        viewModelScope.launch { userPreferencesProvider.togglePackage(packageName, enabled) }
+    }
+
+    // ---- Verrou ----
+
+    fun setCode(code: CharArray, confirmation: CharArray) {
+        try {
+            when {
+                isLocked -> say("Verrouillé : déverrouille d'abord pour changer le code.")
+                code.size < LockManager.MIN_CODE_LENGTH ->
+                    say("Le code doit faire au moins ${LockManager.MIN_CODE_LENGTH} caractères.")
+                !code.contentEquals(confirmation) -> say("Les deux codes ne sont pas identiques.")
+                else -> {
+                    val copy = code.copyOf()
+                    viewModelScope.launch {
+                        lockManager.setCode(copy)
+                        _serviceState.update { it.copy(generatedCode = null) }
+                        say("Code enregistré. EndScroll est verrouillé.")
+                    }
+                }
+            }
+        } finally {
+            code.fill('\u0000')
+            confirmation.fill('\u0000')
+        }
+    }
+
+    /** Genere un code aleatoire et l'enregistre directement. Il n'est montre qu'une fois. */
+    fun generateCode() {
+        if (isLocked) {
+            say("Verrouillé : déverrouille d'abord pour changer le code.")
+            return
+        }
+        val code = LockManager.randomCode()
+        val shown = String(code)
+        viewModelScope.launch {
+            lockManager.setCode(code)
+            _serviceState.update { it.copy(generatedCode = shown) }
+        }
+    }
+
+    fun dismissGeneratedCode() {
+        _serviceState.update { it.copy(generatedCode = null) }
+    }
+
+    fun tryUnlock(code: CharArray) {
+        val copy = code.copyOf()
+        code.fill('\u0000')
+        viewModelScope.launch {
+            when (val result = lockManager.tryUnlock(copy)) {
+                is UnlockResult.Accepted -> say(
+                    "Code bon. Ouverture dans ${LockManager.WAIT_MS / 60_000} minutes, " +
+                        "pour ${LockManager.OPEN_MS / 60_000} minutes.",
+                )
+                is UnlockResult.Rejected -> say("Code faux.")
+                is UnlockResult.TooSoon -> say("Trop d'erreurs : attends la fin du blocage.")
+            }
+        }
+    }
+
+    fun relock() {
+        viewModelScope.launch { lockManager.relock() }
+    }
+
+    fun removeCode() {
+        if (isLocked) return
+        viewModelScope.launch {
+            lockManager.removeCode()
+            say("Code supprimé. EndScroll n'est plus protégé.")
+        }
+    }
+
+    fun consumeMessage() {
+        _serviceState.update { it.copy(message = null) }
+    }
+
+    private fun say(text: String) {
+        Timber.d(text)
+        _serviceState.update { it.copy(message = text) }
     }
 
     override fun onCleared() {
         super.onCleared()
-        stopMonitoring()
-        Timber.d("MainViewModel cleared")
+        isMonitoring = false
     }
 }

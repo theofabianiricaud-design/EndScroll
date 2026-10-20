@@ -1,11 +1,12 @@
 /*
  * Copyright 2025 Atick Faisal
+ * Modifie en 2026 : ecran en francais et verrouillage par code.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,18 +17,9 @@
 
 package dev.atick.shorts.ui.screens
 
-import android.content.Intent
-import android.net.Uri
 import android.widget.Toast
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,128 +28,88 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.google.android.gms.oss.licenses.OssLicensesMenuActivity
-import dev.atick.shorts.models.TrackedPackage
 import dev.atick.shorts.ui.components.TrackedPackagesSection
 import dev.atick.shorts.ui.viewmodels.MainViewModel
-import timber.log.Timber
+import dev.atick.shorts.ui.viewmodels.ServiceState
+import dev.atick.shorts.utils.LockManager
 
-/**
- * Main screen with ViewModel integration.
- *
- * This is the primary entry point for the app UI. Observes lifecycle events
- * to check accessibility service status when the screen resumes.
- *
- * @param viewModel ViewModel managing service state and user preferences
- */
 @Composable
 fun MainScreen(
     viewModel: MainViewModel = viewModel(),
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val serviceState by viewModel.serviceState.collectAsState()
+    val state by viewModel.serviceState.collectAsState()
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            when (event) {
-                Lifecycle.Event.ON_RESUME -> {
-                    Timber.d("Lifecycle ON_RESUME - checking service status")
-                    viewModel.onResume(context)
-                }
-
-                Lifecycle.Event.ON_PAUSE -> {
-                    Timber.d("Lifecycle ON_PAUSE")
-                }
-
-                else -> {}
-            }
+            if (event == Lifecycle.Event.ON_RESUME) viewModel.onResume(context)
         }
-
         lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
 
-        onDispose {
-            Timber.d("Removing lifecycle observer")
-            lifecycleOwner.lifecycle.removeObserver(observer)
+    LaunchedEffect(state.message) {
+        state.message?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+            viewModel.consumeMessage()
         }
     }
 
-    if (serviceState.showDisclosure) {
+    state.generatedCode?.let { code ->
+        GeneratedCodeDialog(code = code, onDismiss = viewModel::dismissGeneratedCode)
+    }
+
+    if (state.showDisclosure) {
         ProminentDisclosureScreen(
             onAgree = { viewModel.acceptDisclosure(context) },
             onCancel = { viewModel.hideDisclosure() },
         )
-    } else {
-        MainScreenContent(
-            isPermissionGranted = serviceState.isGranted,
-            trackedPackages = serviceState.trackedPackages,
-            onOpenSettings = { viewModel.showDisclosure() },
-            onPackageToggle = { packageName, enabled ->
-                viewModel.togglePackageTracking(packageName, enabled)
-            },
-        )
+        return
     }
-}
-
-/**
- * Pure presentation layer for main screen.
- *
- * Use this for testing or when you want to manage state externally.
- * Shows either service active status or setup instructions based on permission state.
- *
- * @param isPermissionGranted Whether accessibility service permission is granted
- * @param modifier Modifier for the root composable
- * @param trackedPackages List of packages with their enabled status
- * @param onOpenSettings Callback when user taps to manage accessibility permission
- * @param onPackageToggle Callback when user toggles package blocking (packageName, enabled)
- */
-@Composable
-fun MainScreenContent(
-    isPermissionGranted: Boolean,
-    modifier: Modifier = Modifier,
-    trackedPackages: List<TrackedPackage> = emptyList(),
-    onOpenSettings: () -> Unit = {},
-    onPackageToggle: (String, Boolean) -> Unit = { _, _ -> },
-) {
-    val context = LocalContext.current
-    val scrollState = rememberScrollState()
 
     Scaffold(
-        modifier = modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
     ) { paddingValues ->
         Column(
@@ -165,484 +117,266 @@ fun MainScreenContent(
                 .fillMaxSize()
                 .padding(paddingValues)
                 .padding(horizontal = 24.dp)
-                .verticalScroll(scrollState),
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            if (isPermissionGranted) {
-                ServiceActiveContent(
-                    trackedPackages = trackedPackages,
-                    onPackageToggle = onPackageToggle,
-                    onManagePermission = onOpenSettings,
+            Spacer(modifier = Modifier.height(8.dp))
+            StatusHeader(state)
+
+            if (state.isGranted) {
+                TrackedPackagesSection(
+                    packages = state.trackedPackages,
+                    onPackageToggle = viewModel::togglePackageTracking,
                 )
             } else {
-                SetupRequiredContent(
-                    onOpenSettings = onOpenSettings,
-                )
-            }
-            // Footer
-            FooterSection(
-                onLinkClick = { url ->
-                    Timber.d("Opening URL: $url")
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                    context.startActivity(intent)
-                },
-            )
-        }
-    }
-}
-
-/**
- * Displays the active service status with tracked packages.
- *
- * Shows an animated loading indicator with check icon and a list
- * of tracked apps that users can toggle on/off.
- *
- * @param trackedPackages List of packages with their enabled status
- * @param onPackageToggle Callback when user toggles package blocking
- * @param onManagePermission Callback when user wants to manage accessibility permission
- */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-private fun ServiceActiveContent(
-    trackedPackages: List<TrackedPackage> = emptyList(),
-    onPackageToggle: (String, Boolean) -> Unit = { _, _ -> },
-    onManagePermission: () -> Unit = {},
-) {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn() + scaleIn(),
-        exit = fadeOut() + scaleOut(),
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-        ) {
-            // Material 3 Expressive LoadingIndicator with check icon
-            Box(
-                modifier = Modifier.size(200.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                // Material 3 LoadingIndicator (morphing shapes animation)
-                LoadingIndicator(
-                    modifier = Modifier.size(200.dp),
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                )
-
-                // Icon container in the center
-                Surface(
-                    modifier = Modifier.size(56.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    tonalElevation = 4.dp,
+                Button(
+                    onClick = viewModel::showDisclosure,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp),
                 ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.CheckCircle,
-                            contentDescription = "Active",
-                            modifier = Modifier.size(56.dp),
-                            tint = MaterialTheme.colorScheme.primary,
-                        )
-                    }
+                    Icon(Icons.Rounded.Settings, contentDescription = null)
+                    Spacer(modifier = Modifier.size(8.dp))
+                    Text("Activer dans les Paramètres", fontWeight = FontWeight.SemiBold)
                 }
             }
 
-            Spacer(modifier = Modifier.height(32.dp))
+            LockSection(state = state, viewModel = viewModel)
 
-            Text(
-                text = "Service Active",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
-            )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "Content blocker is running",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-
+            if (state.isGranted && !state.lock.isLocked(state.now)) {
+                OutlinedButton(
+                    onClick = viewModel::showDisclosure,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text("Gérer la permission d'accessibilité")
+                }
+            }
             Spacer(modifier = Modifier.height(24.dp))
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                ) {
-                    InfoRow(
-                        title = "Status",
-                        value = "Enabled",
-                        valueColor = MaterialTheme.colorScheme.primary,
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    InfoRow(
-                        title = "Tracked Apps",
-                        value = trackedPackages.count { it.isEnabled }.toString(),
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            TrackedPackagesSection(
-                packages = trackedPackages,
-                onPackageToggle = onPackageToggle,
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            OutlinedButton(
-                onClick = onManagePermission,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Settings,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                )
-                Spacer(modifier = Modifier.size(8.dp))
-                Text(
-                    text = "Manage Accessibility Permission",
-                    style = MaterialTheme.typography.titleSmall,
-                    fontWeight = FontWeight.SemiBold,
-                )
-            }
         }
     }
 }
 
-/**
- * Displays setup instructions when accessibility service is not enabled.
- *
- * Shows step-by-step instructions and a button to open accessibility settings.
- *
- * @param onOpenSettings Callback when user taps to open accessibility settings
- */
 @Composable
-private fun SetupRequiredContent(
-    onOpenSettings: () -> Unit,
-) {
-    AnimatedVisibility(
-        visible = true,
-        enter = fadeIn() + scaleIn(),
-        exit = fadeOut() + scaleOut(),
+private fun StatusHeader(state: ServiceState) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Icon(
+            imageVector = if (state.isGranted) Icons.Rounded.CheckCircle else Icons.Rounded.Settings,
+            contentDescription = null,
+            modifier = Modifier.size(72.dp),
+            tint = if (state.isGranted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+        )
+        Spacer(modifier = Modifier.height(12.dp))
+        Text(
+            text = if (state.isGranted) "EndScroll est actif" else "EndScroll est éteint",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold,
+        )
+        Text(
+            text = if (state.isGranted) {
+                "Reels et Shorts sont bloqués. Messages, appels, photos et stories restent libres."
+            } else {
+                "Active-le dans Paramètres > Accessibilité > Applis installées > EndScroll."
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun LockSection(state: ServiceState, viewModel: MainViewModel) {
+    val lock = state.lock
+    val now = state.now
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
     ) {
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Surface(
-                modifier = Modifier.size(120.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.errorContainer,
-                tonalElevation = 4.dp,
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Rounded.Settings,
-                        contentDescription = "Permission Required",
-                        modifier = Modifier.size(64.dp),
-                        tint = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
             Text(
-                text = "Setup Required",
-                style = MaterialTheme.typography.headlineMedium,
+                text = "Verrou",
+                style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground,
             )
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            Text(
-                text = "Enable accessibility service to block short-form content automatically",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp),
-                ) {
-                    Text(
-                        text = "How to enable:",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    InstructionStep(
-                        number = "1",
-                        text = "Tap the button below to open settings",
-                    )
-                    InstructionStep(
-                        number = "2",
-                        text = "Find the app in the list",
-                    )
-                    InstructionStep(
-                        number = "3",
-                        text = "Toggle the switch to enable",
-                    )
-                    InstructionStep(
-                        number = "4",
-                        text = "Return to this app",
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            Button(
-                onClick = onOpenSettings,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                ),
-                elevation = ButtonDefaults.buttonElevation(
-                    defaultElevation = 4.dp,
-                    pressedElevation = 8.dp,
-                ),
-            ) {
-                Icon(
-                    imageVector = Icons.Rounded.Settings,
-                    contentDescription = null,
-                    modifier = Modifier.size(24.dp),
-                )
-                Spacer(modifier = Modifier.size(8.dp))
-                Text(
-                    text = "Open Settings",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                )
+            when {
+                !lock.hasCode -> NoCodeContent(viewModel)
+                lock.isLocked(now) -> LockedContent(state, viewModel)
+                else -> OpenContent(state, viewModel)
             }
         }
     }
 }
 
-/**
- * Displays a title-value pair in the info card.
- *
- * @param title The label text
- * @param value The value text
- * @param valueColor Color for the value text
- */
 @Composable
-private fun InfoRow(
-    title: String,
-    value: String,
-    valueColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-) {
-    Column {
+private fun NoCodeContent(viewModel: MainViewModel) {
+    Text(
+        "Sans code, n'importe qui (toi compris) peut couper EndScroll. " +
+            "Avec un code, il faut le code puis ${LockManager.WAIT_MS / 60_000} minutes d'attente " +
+            "pour couper un blocage, désactiver l'accessibilité ou désinstaller.",
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    Button(onClick = viewModel::generateCode, modifier = Modifier.fillMaxWidth()) {
+        Text("Générer un code de 20 caractères")
+    }
+    Text(
+        "Le plus solide : donne ce code à quelqu'un de confiance et ne le garde pas sur toi.",
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    ChooseCodeFields(viewModel)
+}
+
+@Composable
+private fun ChooseCodeFields(viewModel: MainViewModel) {
+    var code by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    Text("Ou choisis ton propre code (${LockManager.MIN_CODE_LENGTH} caractères minimum) :")
+    SecretField(value = code, onValueChange = { code = it }, label = "Code")
+    SecretField(value = confirmation, onValueChange = { confirmation = it }, label = "Confirmer le code")
+    OutlinedButton(
+        onClick = {
+            viewModel.setCode(code.toCharArray(), confirmation.toCharArray())
+            code = ""
+            confirmation = ""
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text("Enregistrer ce code")
+    }
+}
+
+@Composable
+private fun LockedContent(state: ServiceState, viewModel: MainViewModel) {
+    val lock = state.lock
+    val now = state.now
+    LabelRow(Icons.Rounded.Lock, "Verrouillé")
+
+    if (lock.isWaitingForUnlock(now)) {
         Text(
-            text = title,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-        )
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = value,
+            "Code accepté. Ouverture dans ${formatDuration(lock.unlockStartsAt - now)}.",
             style = MaterialTheme.typography.bodyLarge,
             fontWeight = FontWeight.SemiBold,
-            color = valueColor,
+        )
+        OutlinedButton(onClick = viewModel::relock, modifier = Modifier.fillMaxWidth()) {
+            Text("Annuler, je n'en ai plus besoin")
+        }
+        return
+    }
+
+    if (now < lock.blockedUntil) {
+        Text(
+            "Trop d'erreurs. Nouvel essai dans ${formatDuration(lock.blockedUntil - now)}.",
+            color = MaterialTheme.colorScheme.error,
+        )
+        return
+    }
+
+    var code by remember { mutableStateOf("") }
+    Text(
+        "Pour couper un blocage, il faut le code, puis attendre " +
+            "${LockManager.WAIT_MS / 60_000} minutes.",
+        style = MaterialTheme.typography.bodyMedium,
+    )
+    SecretField(value = code, onValueChange = { code = it }, label = "Code")
+    Button(
+        onClick = {
+            viewModel.tryUnlock(code.toCharArray())
+            code = ""
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text("Demander le déverrouillage")
+    }
+    if (lock.failedAttempts > 0) {
+        Text(
+            "Erreurs : ${lock.failedAttempts}. Après 3, l'attente double à chaque erreur (jusqu'à 24 h).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
         )
     }
 }
 
-/**
- * Displays a numbered instruction step.
- *
- * @param number Step number as a string
- * @param text Instruction text
- */
 @Composable
-private fun InstructionStep(
-    number: String,
-    text: String,
-) {
-    Column(
-        modifier = Modifier.padding(vertical = 6.dp),
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Surface(
-                modifier = Modifier.size(28.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.primary,
-                tonalElevation = 2.dp,
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
+private fun OpenContent(state: ServiceState, viewModel: MainViewModel) {
+    Text(
+        "Déverrouillé encore ${formatDuration(state.lock.unlockEndsAt - state.now)}. " +
+            "Tu peux couper un blocage, changer ou supprimer le code.",
+        style = MaterialTheme.typography.bodyLarge,
+        fontWeight = FontWeight.SemiBold,
+    )
+    Button(onClick = viewModel::relock, modifier = Modifier.fillMaxWidth()) {
+        Text("Reverrouiller maintenant")
+    }
+    OutlinedButton(onClick = viewModel::generateCode, modifier = Modifier.fillMaxWidth()) {
+        Text("Remplacer par un nouveau code généré")
+    }
+    ChooseCodeFields(viewModel)
+    TextButton(onClick = viewModel::removeCode, modifier = Modifier.fillMaxWidth()) {
+        Text("Supprimer le code", color = MaterialTheme.colorScheme.error)
+    }
+}
+
+@Composable
+private fun LabelRow(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Spacer(modifier = Modifier.size(8.dp))
+        Text(text, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun SecretField(value: String, onValueChange: (String) -> Unit, label: String) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        label = { Text(label) },
+        singleLine = true,
+        visualTransformation = PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun GeneratedCodeDialog(code: String, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text("Ton code de verrouillage") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                SelectionContainer {
                     Text(
-                        text = number,
-                        style = MaterialTheme.typography.labelMedium,
+                        code,
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimary,
                     )
                 }
+                Text(
+                    "Il ne sera plus jamais affiché. Recopie-le et donne-le à quelqu'un de confiance. " +
+                        "Sans lui, la seule sortie est le mode sans échec d'Android.",
+                )
             }
-
-            Spacer(modifier = Modifier.size(12.dp))
-
-            Text(
-                text = text,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text("C'est noté, verrouiller") }
+        },
+    )
 }
 
-/**
- * Footer section with legal and informational links.
- *
- * @param onLinkClick Callback when a link is clicked, receives the URL
- */
-@Composable
-private fun FooterSection(
-    onLinkClick: (String) -> Unit = {},
-) {
-    val context = LocalContext.current
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        // Links row
-        FlowRow(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 16.dp),
-            horizontalArrangement = Arrangement.Center,
-
-        ) {
-            FooterLink(
-                text = "Terms",
-                onClick = { onLinkClick("https://terms.atick.dev/") },
-            )
-
-            FooterLink(
-                text = "Privacy",
-                onClick = { onLinkClick("https://privacy.atick.dev/") },
-            )
-
-            FooterLink(
-                text = "Licenses",
-                onClick = {
-                    try {
-                        context.startActivity(
-                            Intent(
-                                context,
-                                OssLicensesMenuActivity::class.java,
-                            ),
-                        )
-                    } catch (e: Exception) {
-                        Timber.e(e, "Failed to open OSS licenses screen")
-                        Toast.makeText(
-                            context,
-                            "Unable to open licenses",
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    }
-                },
-            )
-
-            FooterLink(
-                text = "Source",
-                onClick = { onLinkClick("https://github.com/atick-faisal/Shorts-Blocker") },
-            )
-        }
-    }
-}
-
-/**
- * A clickable text link for the footer.
- *
- * @param text The link text to display
- * @param onClick Callback when the link is clicked
- */
-@Composable
-private fun FooterLink(
-    text: String,
-    onClick: () -> Unit,
-) {
-    TextButton(
-        onClick = onClick,
-        modifier = Modifier.padding(0.dp),
-    ) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.primary,
-            fontWeight = FontWeight.Medium,
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "Service Active")
-@Composable
-private fun ServiceActivePreview() {
-    MaterialTheme {
-        MainScreenContent(
-            isPermissionGranted = true,
-            trackedPackages = listOf(
-                TrackedPackage(
-                    packageName = "com.google.android.youtube",
-                    displayName = "YouTube",
-                    description = "Block YouTube Shorts",
-                    isEnabled = true,
-                ),
-                TrackedPackage(
-                    packageName = "com.instagram.android",
-                    displayName = "Instagram",
-                    description = "Block Instagram Reels",
-                    isEnabled = false,
-                ),
-            ),
-        )
-    }
-}
-
-@Preview(showBackground = true, name = "Setup Required")
-@Composable
-private fun SetupRequiredPreview() {
-    MaterialTheme {
-        MainScreenContent(
-            isPermissionGranted = false,
-        )
+private fun formatDuration(ms: Long): String {
+    val totalSeconds = (ms.coerceAtLeast(0L) + 999) / 1000
+    val h = totalSeconds / 3600
+    val m = (totalSeconds % 3600) / 60
+    val s = totalSeconds % 60
+    return when {
+        h > 0 -> "${h} h ${m} min"
+        m > 0 -> "${m} min ${s.toString().padStart(2, '0')} s"
+        else -> "${s} s"
     }
 }

@@ -1,11 +1,12 @@
 /*
  * Copyright 2025 Atick Faisal
+ * Modifie en 2026 : TikTok, et applis de reglages a proteger.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,34 +19,52 @@ package dev.atick.shorts.utils
 
 import dev.atick.shorts.models.TrackedPackage
 
-/**
- * Constants for supported app packages and their default configurations.
- */
 object PackageConstants {
-    /** YouTube app package identifier */
     const val YOUTUBE_PACKAGE = "com.google.android.youtube"
-
-    /** Instagram app package identifier */
     const val INSTAGRAM_PACKAGE = "com.instagram.android"
+    const val TIKTOK_PACKAGE = "com.zhiliaoapp.musically"
 
-    /** List of all available packages that can be tracked */
+    /** Autres noms de TikTok selon le pays : surveilles avec la meme case. */
+    val TIKTOK_ALIASES = listOf(TIKTOK_PACKAGE, "com.ss.android.ugc.trill")
+
     val AVAILABLE_PACKAGES = listOf(
-        TrackedPackage(
-            packageName = YOUTUBE_PACKAGE,
-            displayName = "YouTube",
-            description = "Block YouTube Shorts",
-            isEnabled = false,
-        ),
         TrackedPackage(
             packageName = INSTAGRAM_PACKAGE,
             displayName = "Instagram",
-            description = "Block Instagram Reels",
+            description = "Bloque les Reels. Messages, appels, photos et stories restent libres.",
+            isEnabled = true,
+        ),
+        TrackedPackage(
+            packageName = YOUTUBE_PACKAGE,
+            displayName = "YouTube",
+            description = "Bloque les Shorts. Les vidéos normales restent libres.",
+            isEnabled = true,
+        ),
+        TrackedPackage(
+            packageName = TIKTOK_PACKAGE,
+            displayName = "TikTok",
+            description = "Ferme toute l'appli (elle n'est faite que de vidéos courtes).",
             isEnabled = false,
         ),
     )
 
-    /** List of package names that are enabled by default */
     val DEFAULT_ENABLED_PACKAGES = AVAILABLE_PACKAGES
         .filter { it.isEnabled }
         .map { it.packageName }
+
+    /**
+     * Applis ou l'on peut couper ou desinstaller le bloqueur.
+     * Quand le verrou est ferme, toute page de ces applis qui affiche le nom du bloqueur est refermee.
+     */
+    val GUARDED_PACKAGES = listOf(
+        "com.android.settings",
+        "com.samsung.accessibility",
+        "com.samsung.android.settings",
+        "com.google.android.packageinstaller",
+        "com.android.packageinstaller",
+        "com.samsung.android.packageinstaller",
+        // Pas l'ecran d'accueil : l'icone du bloqueur y porte son nom.
+        // Desinstaller depuis l'icone passe par l'installateur, protege ci-dessus.
+        "com.android.vending",
+    )
 }

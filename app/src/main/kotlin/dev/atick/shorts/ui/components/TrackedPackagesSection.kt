@@ -59,7 +59,7 @@ fun TrackedPackagesSection(
             modifier = Modifier.padding(vertical = 16.dp),
         ) {
             Text(
-                text = "Tracked Apps",
+                text = "Applis surveillées",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

@@ -137,7 +137,7 @@ fun OnboardingScreen(
                     onClick = onComplete,
                 ) {
                     Text(
-                        text = "Skip",
+                        text = "Passer",
                         style = MaterialTheme.typography.titleMedium,
                     )
                 }
@@ -158,7 +158,7 @@ fun OnboardingScreen(
                     ),
                 ) {
                     Text(
-                        text = if (pagerState.currentPage < 2) "Next" else "Get Started",
+                        text = if (pagerState.currentPage < 2) "Suivant" else "Commencer",
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                     )
@@ -209,7 +209,7 @@ private fun WelcomePage(modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(32.dp))
 
         Text(
-            text = "Welcome to Shorts Blocker",
+            text = "Bienvenue dans EndScroll",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
@@ -219,7 +219,7 @@ private fun WelcomePage(modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "Take back control of your time by automatically blocking YouTube Shorts and Instagram Reels.",
+            text = "Plus de Reels ni de Shorts. Instagram et YouTube restent utilisables pour tout le reste.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -273,7 +273,7 @@ private fun HowItWorksPage(modifier: Modifier = Modifier) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "How Blocking Works",
+            text = "Comment ça marche",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
@@ -283,7 +283,7 @@ private fun HowItWorksPage(modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "When Shorts or Reels are detected, the app returns you to the main feed automatically.",
+            text = "Dès qu'un Reel ou un Short s'ouvre, EndScroll te renvoie en arrière.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -340,7 +340,7 @@ private fun FlowDiagram(
         // Block action
         FlowCard(
             icon = Icons.Rounded.Close,
-            label = "Blocked",
+            label = "Bloqué",
             color = MaterialTheme.colorScheme.primaryContainer,
             iconTint = MaterialTheme.colorScheme.primary,
         )
@@ -356,7 +356,7 @@ private fun FlowDiagram(
         // Redirect
         FlowCard(
             icon = Icons.AutoMirrored.Default.ArrowBack,
-            label = "Back",
+            label = "Retour",
             color = MaterialTheme.colorScheme.secondaryContainer,
             iconTint = MaterialTheme.colorScheme.secondary,
         )
@@ -431,7 +431,7 @@ private fun ReadyPage(modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(32.dp))
 
         Text(
-            text = "You're All Set!",
+            text = "C'est prêt",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
@@ -441,7 +441,7 @@ private fun ReadyPage(modifier: Modifier = Modifier) {
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            text = "Next, you'll need to enable the accessibility service to start blocking short-form content.",
+            text = "Il reste à activer EndScroll dans les réglages d'accessibilité.",
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -468,7 +468,7 @@ private fun ReadyPage(modifier: Modifier = Modifier) {
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = "You can customize which apps to monitor from the main screen after setup.",
+                    text = "Ensuite, pose un code pour que personne (toi compris) ne puisse le couper sur un coup de tête.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onTertiaryContainer,
                 )

@@ -26,10 +26,6 @@ val keystorePropertiesFile: File = rootProject.file("keystore.properties")
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.compose)
-    alias(libs.plugins.gms)
-    alias(libs.plugins.firebase.crashlytics)
-    alias(libs.plugins.google.oss.licenses)
-    alias(libs.plugins.dokka)
 }
 
 extensions.configure<ApplicationExtension> {
@@ -51,7 +47,7 @@ extensions.configure<ApplicationExtension> {
         targetSdk = 36
         versionCode = mVersionCode
         versionName = mVersionName
-        applicationId = "dev.atick.shorts"
+        applicationId = "dev.theo.endscroll"
     }
 
     signingConfigs {
@@ -142,14 +138,8 @@ dependencies {
     implementation(libs.androidx.dataStore.core)
     implementation(libs.androidx.dataStore.preferences)
 
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.analytics)
-    implementation(libs.firebase.crashlytics)
 
-    dokkaPlugin(libs.dokka.android.plugin)
-    dokkaPlugin(libs.dokka.mermaid.plugin)
 
     implementation(libs.timber.logging)
 
-    implementation(libs.google.oss.licenses)
 }

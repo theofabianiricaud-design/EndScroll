@@ -35,5 +35,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Shorts-Blocker"
+rootProject.name = "EndScroll"
 include(":app")

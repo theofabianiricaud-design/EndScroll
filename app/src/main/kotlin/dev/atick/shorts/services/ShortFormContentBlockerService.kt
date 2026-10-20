@@ -1,11 +1,12 @@
 /*
  * Copyright 2025 Atick Faisal
+ * Modifie en 2026 : TikTok, et protection des reglages par code.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -21,111 +22,131 @@ import android.accessibilityservice.AccessibilityServiceInfo
 import android.annotation.SuppressLint
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
+import dev.atick.shorts.R
 import dev.atick.shorts.services.detectors.InstagramReelsDetector
 import dev.atick.shorts.services.detectors.ShortFormContentDetector
+import dev.atick.shorts.services.detectors.TikTokDetector
 import dev.atick.shorts.services.detectors.YouTubeShortsDetector
+import dev.atick.shorts.utils.LockManager
+import dev.atick.shorts.utils.LockState
+import dev.atick.shorts.utils.PackageConstants
 import dev.atick.shorts.utils.UserPreferencesProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import timber.log.Timber
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Accessibility service that detects and blocks short-form content across supported apps.
+ * Service d'accessibilite :
+ *  - renvoie en arriere des qu'un Reel ou un Short s'affiche (TikTok : retour a l'accueil) ;
+ *  - quand le verrou est ferme, referme toute page des Parametres ou de l'installateur
+ *    qui affiche le nom du bloqueur (desactivation, arret force, desinstallation).
  *
- * This service monitors accessibility events from tracked applications (YouTube, Instagram)
- * and automatically performs a back action when short-form content (Shorts, Reels) is detected.
- * Uses platform-specific detectors to identify when users are actively watching short-form content.
+ * Rien n'est enregistre ni envoye : l'ecran est lu en memoire puis oublie.
  */
 @SuppressLint("AccessibilityPolicy")
 class ShortFormContentBlockerService : AccessibilityService() {
 
     private val lastActionTimestamps = ConcurrentHashMap<String, Long>()
     private val actionCooldownMillis = 1500L
-    private val userPreferencesProvider by lazy { UserPreferencesProvider(applicationContext) }
 
+    private val userPreferencesProvider by lazy { UserPreferencesProvider(applicationContext) }
+    private val lockManager by lazy { LockManager(applicationContext) }
     private val job = SupervisorJob()
     private val coroutineScope = CoroutineScope(Dispatchers.IO + job)
 
+    @Volatile
+    private var lockState = LockState()
+
+    @Volatile
+    private var trackedPackages: Set<String> = emptySet()
+
+    private val appLabel by lazy { getString(R.string.app_name) }
+
     private val detectors: Map<String, ShortFormContentDetector> by lazy {
-        mapOf(
-            "com.google.android.youtube" to YouTubeShortsDetector(),
-            "com.instagram.android" to InstagramReelsDetector(),
-        )
+        buildMap {
+            put(PackageConstants.YOUTUBE_PACKAGE, YouTubeShortsDetector())
+            put(PackageConstants.INSTAGRAM_PACKAGE, InstagramReelsDetector())
+            PackageConstants.TIKTOK_ALIASES.forEach { put(it, TikTokDetector(it)) }
+        }
     }
 
     override fun onServiceConnected() {
         Timber.d("ShortFormContentBlockerService connected")
 
-        userPreferencesProvider.getTrackedPackages()
-            .onEach { packages ->
-                Timber.d("Tracked packages updated: ${packages.joinToString()}")
-                val info = AccessibilityServiceInfo().apply {
+        combine(userPreferencesProvider.getTrackedPackages(), lockManager.state) { packages, lock ->
+            packages to lock
+        }
+            .onEach { (packages, lock) ->
+                val expanded = packages.flatMap { pkg ->
+                    if (pkg == PackageConstants.TIKTOK_PACKAGE) PackageConstants.TIKTOK_ALIASES else listOf(pkg)
+                }.toSet()
+                trackedPackages = expanded
+                lockState = lock
+
+                // On n'ecoute les Parametres que si un code protege le bloqueur
+                val listened = if (lock.hasCode) expanded + PackageConstants.GUARDED_PACKAGES else expanded
+                Timber.d("Packages ecoutes : ${listened.joinToString()}")
+                serviceInfo = AccessibilityServiceInfo().apply {
                     eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or
                         AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
                     feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
                     flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
                         AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
-                    packageNames = packages.toTypedArray()
+                    packageNames = listened.toTypedArray()
                     notificationTimeout = 100
                 }
-                serviceInfo = info
             }
-            .catch { error ->
-                Timber.e(error, "Error fetching tracked packages")
-            }
+            .catch { error -> Timber.e(error, "Lecture des reglages impossible") }
             .launchIn(coroutineScope)
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
-
-        if (
-            event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
+        val relevant = event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED ||
             (
                 event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED &&
-                    event.contentChangeTypes and
-                    AccessibilityEvent.CONTENT_CHANGE_TYPE_SUBTREE != 0
+                    event.contentChangeTypes and AccessibilityEvent.CONTENT_CHANGE_TYPE_SUBTREE != 0
                 )
-        ) {
-            val packageName = event.packageName?.toString()
-            Timber.v(
-                "Accessibility event: type=${event.eventType}, " +
-                    "className=${event.className}, package=$packageName",
-            )
+        if (!relevant) return
+        val packageName = event.packageName?.toString() ?: return
 
-            // Get the appropriate detector for this package
-            val detector = packageName?.let { detectors[it] }
-            if (detector == null) {
-                Timber.v("No detector found for package: $packageName")
-                return
-            }
+        if (packageName in PackageConstants.GUARDED_PACKAGES) {
+            guardSettings(packageName)
+            return
+        }
 
-            val windows = windows
-            Timber.v("Inspecting ${windows.size} windows for package: $packageName")
-            for (win in windows) {
-                // Only process focused application windows
-                if (!win.isFocused || !win.isActive) {
-                    Timber.v("Skipping non-focused/inactive window")
-                    continue
+        if (packageName !in trackedPackages) return
+        val detector = detectors[packageName] ?: return
+
+        for (win in windows) {
+            if (!win.isFocused || !win.isActive) continue
+            val root = win.root ?: continue
+            if (detector.isShortFormContent(event, root, resources)) {
+                Timber.i("[$packageName] Contenu court detecte")
+                if (shouldPerformAction("${packageName}_content_detected")) {
+                    val action = if (detector is TikTokDetector) GLOBAL_ACTION_HOME else GLOBAL_ACTION_BACK
+                    performGlobalAction(action)
                 }
-
-                val root = win.root ?: continue
-                if (detector.isShortFormContent(event, root, resources)) {
-                    Timber.i("[$packageName] Short-form content detected!")
-                    val key = "${packageName}_content_detected"
-                    if (shouldPerformAction(key)) {
-                        handleShortFormContentDetected(packageName)
-                    } else {
-                        Timber.d("[$packageName] Action skipped due to cooldown")
-                    }
-                    break
-                }
+                break
             }
+        }
+    }
+
+    /** Referme la page si elle permet de couper ou de desinstaller le bloqueur. */
+    private fun guardSettings(packageName: String) {
+        if (!lockState.isLocked()) return
+        val root = rootInActiveWindow ?: return
+        val mentionsUs = root.findAccessibilityNodeInfosByText(appLabel).isNotEmpty()
+        if (!mentionsUs) return
+        Timber.i("[$packageName] Page de reglage du bloqueur refermee (verrou ferme)")
+        if (shouldPerformAction("guard_$packageName")) {
+            performGlobalAction(GLOBAL_ACTION_HOME)
         }
     }
 
@@ -135,44 +156,14 @@ class ShortFormContentBlockerService : AccessibilityService() {
 
     override fun onDestroy() {
         super.onDestroy()
-        Timber.d("ShortFormContentBlockerService destroyed")
         job.cancel()
     }
 
-    /**
-     * Handles detection of short-form content by performing a back navigation action.
-     *
-     * @param packageName The package name of the app where content was detected
-     */
-    private fun handleShortFormContentDetected(packageName: String) {
-        Timber.i("[$packageName] Handling short-form content detection - performing BACK action")
-        val success = performGlobalAction(GLOBAL_ACTION_BACK)
-        if (success) {
-            Timber.d("[$packageName] BACK action performed successfully")
-        } else {
-            Timber.w("[$packageName] BACK action failed")
-        }
-    }
-
-    /**
-     * Checks if an action should be performed based on cooldown period.
-     *
-     * Prevents repeated actions from being performed too frequently by enforcing
-     * a cooldown period of 1.5 seconds between actions.
-     *
-     * @param key Unique identifier for the action
-     * @return true if the action should be performed, false if still in cooldown
-     */
     private fun shouldPerformAction(key: String): Boolean {
         val now = SystemClock.uptimeMillis()
         val last = lastActionTimestamps[key] ?: 0L
-        val timeSinceLastAction = now - last
-        if (timeSinceLastAction < actionCooldownMillis) {
-            Timber.v("Action '$key' cooldown active: ${timeSinceLastAction}ms since last action")
-            return false
-        }
+        if (now - last < actionCooldownMillis) return false
         lastActionTimestamps[key] = now
-        Timber.d("Action '$key' allowed (cooldown: ${actionCooldownMillis}ms)")
         return true
     }
 }

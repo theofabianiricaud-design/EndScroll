@@ -1,11 +1,12 @@
 /*
  * Copyright 2025 Atick Faisal
+ * Modifie en 2026 : detection par identifiants "clips" uniquement.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *     https://www.apache.org/licenses/LICENSE-2.0
+ *      http://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,32 +23,16 @@ import android.view.accessibility.AccessibilityNodeInfo
 import timber.log.Timber
 
 /**
- * Detector for Instagram Reels short-form content.
+ * Detecte les Reels d'Instagram.
  *
- * This detector identifies when a user is actively watching Instagram Reels using
- * a two-pronged detection strategy: explicit Reels tab detection and fullscreen
- * media detection.
+ * Dans le code d'Instagram, les Reels s'appellent "clips" et les stories "reel".
+ * On ne bloque donc que deux choses :
+ *  - l'onglet Reels (clips_tab) quand il est selectionne ;
+ *  - le lecteur plein ecran de Reels (identifiants clips_viewer...), d'ou qu'il soit ouvert.
  *
- * **Detection Strategy:**
- * 1. **Reels Tab Detection**: Checks if "clips_tab" element exists and is selected
- * 2. **Fullscreen Detection**: Detects fullscreen media viewing when feed_tab is absent
- *
- * The dual strategy accounts for Instagram's various entry points to Reels content
- * (dedicated tab, explore page, profile reels, etc.)
- *
- * **Implementation Details:**
- * - Scans up to 10 nodes (shallow scan for performance)
- * - Uses feed_tab absence as indicator of fullscreen viewing
- * - Instagram uses "clips_viewer" for all video content, requiring careful detection
- *
- * **Known Limitations:**
- * - May trigger on fullscreen regular posts (rare false positives)
- * - Detection patterns may break after Instagram app updates
- * - Does not distinguish between Reels in feed vs dedicated viewing
- *
- * **Compatibility:**
- * - Tested with Instagram app versions 300.x - 320.x
- * - May require updates for major Instagram redesigns
+ * Tout le reste passe : messages, appels, envoi de photos, stories, profils.
+ * Une conversation ouverte (zone de saisie de message) n'est jamais bloquee,
+ * meme si un apercu de Reel y apparait.
  */
 class InstagramReelsDetector : ShortFormContentDetector {
 
@@ -58,30 +43,29 @@ class InstagramReelsDetector : ShortFormContentDetector {
         rootNode: AccessibilityNodeInfo,
         resources: Resources,
     ): Boolean {
-        // Instagram uses clips_viewer for everything, so we need to be very specific
-        // Check if we're in the Reels tab/activity specifically
-
-        val className = event.className?.toString()
-        Timber.v("[Instagram] Event className: $className")
-
         val stack = ArrayDeque<AccessibilityNodeInfo>()
         stack.add(rootNode)
         var nodesScanned = 0
-        var feedTabCount = 0
+        var reelViewerSeen = false
 
-        while (stack.isNotEmpty() && nodesScanned < 10) {
+        while (stack.isNotEmpty() && nodesScanned < MAX_NODES) {
             val n = stack.removeFirst()
             nodesScanned++
+            val id = n.viewIdResourceName?.substringAfter(":id/")
 
-            val id = n.viewIdResourceName
-
-            if (id != null && ("feed_tab" in id)) {
-                feedTabCount++
-            }
-
-            if (id != null && ("clips_tab" in id && n.isSelected)) {
-                Timber.i("[Instagram] ✓ User is actively watching Reels in Reels tab")
-                return true
+            if (id != null) {
+                // Dans une conversation : on laisse toujours passer
+                if (THREAD_MARKERS.any { it in id }) {
+                    Timber.v("[Instagram] Conversation ouverte, rien a bloquer")
+                    return false
+                }
+                if (id == "clips_tab" && n.isSelected) {
+                    Timber.i("[Instagram] Onglet Reels selectionne")
+                    return true
+                }
+                if (REEL_VIEWER_MARKERS.any { id.startsWith(it) }) {
+                    reelViewerSeen = true
+                }
             }
 
             for (i in 0 until n.childCount) {
@@ -89,11 +73,27 @@ class InstagramReelsDetector : ShortFormContentDetector {
             }
         }
 
-        if (feedTabCount == 0) {
-            Timber.i("[Instagram] ✓ User is actively watching Media in Fullscreen")
-            return true
+        if (reelViewerSeen) {
+            Timber.i("[Instagram] Lecteur de Reels detecte ($nodesScanned noeuds)")
         }
-        Timber.v("[Instagram] No Reels detected ($nodesScanned nodes scanned, feedTabCount=$feedTabCount)")
-        return false
+        return reelViewerSeen
+    }
+
+    private companion object {
+        const val MAX_NODES = 600
+
+        /** Identifiants du lecteur de Reels plein ecran. */
+        val REEL_VIEWER_MARKERS = listOf(
+            "clips_viewer",
+            "clips_video_container",
+            "clips_ufi",
+        )
+
+        /** Identifiants presents dans une conversation privee. */
+        val THREAD_MARKERS = listOf(
+            "row_thread_composer",
+            "thread_composer",
+            "direct_thread",
+        )
     }
 }

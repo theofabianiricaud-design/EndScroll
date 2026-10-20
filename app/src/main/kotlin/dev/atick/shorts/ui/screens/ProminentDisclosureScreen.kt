@@ -83,7 +83,7 @@ fun ProminentDisclosureScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             Text(
-                text = "Accessibility Permission",
+                text = "Permission d'accessibilité",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
@@ -93,7 +93,7 @@ fun ProminentDisclosureScreen(
             Spacer(modifier = Modifier.height(8.dp))
 
             Text(
-                text = "Please review before enabling",
+                text = "À lire avant d'activer",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,
@@ -104,9 +104,9 @@ fun ProminentDisclosureScreen(
             // Section A: AccessibilityService Statement
             DisclosureCard(
                 icon = Icons.Rounded.Settings,
-                title = "What This App Uses",
-                content = "This app uses the AccessibilityService API to block YouTube Shorts and Instagram Reels.\n\n" +
-                    "The AccessibilityService allows the app to detect when Shorts or Reels are opened and prevent them from playing.",
+                title = "Ce que l'appli utilise",
+                content = "EndScroll utilise le service d'accessibilité d'Android pour reconnaître les Reels et les Shorts.\n\n" +
+                    "Il lit les identifiants des éléments à l'écran d'Instagram, YouTube et TikTok, et des Paramètres quand le verrou est posé.",
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -114,9 +114,9 @@ fun ProminentDisclosureScreen(
             // Section B: Purpose Statement
             DisclosureCard(
                 icon = Icons.Rounded.Info,
-                title = "Why We Need This",
-                content = "The sole purpose of using this permission is to help you reduce distractions by blocking short-form video feeds.\n\n" +
-                    "The service is not used for automation, keylogging, data extraction, or controlling your device.",
+                title = "Pourquoi",
+                content = "Le seul but : bloquer les vidéos courtes, et empêcher de couper EndScroll sans le code.\n\n" +
+                    "Il n'enregistre aucune frappe et ne lit pas tes messages.",
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -124,9 +124,9 @@ fun ProminentDisclosureScreen(
             // Section C: Privacy Statement
             DisclosureCard(
                 icon = Icons.Rounded.Lock,
-                title = "Your Privacy",
-                content = "This app does not collect, store, or share any personal or sensitive data accessed via the AccessibilityService.\n\n" +
-                    "All processing happens locally on your device. The Source code for the app is publicly available for transparency.",
+                title = "Ta vie privée",
+                content = "EndScroll n'a pas accès à Internet : rien ne peut sortir du téléphone.\n\n" +
+                    "Tout se passe en mémoire, puis est oublié.",
             )
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -146,7 +146,7 @@ fun ProminentDisclosureScreen(
                 ),
             ) {
                 Text(
-                    text = "I Understand and Agree",
+                    text = "J'ai compris, activer",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )
@@ -161,7 +161,7 @@ fun ProminentDisclosureScreen(
                     .height(56.dp),
             ) {
                 Text(
-                    text = "Cancel",
+                    text = "Annuler",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
                 )

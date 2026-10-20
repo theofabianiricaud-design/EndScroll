@@ -58,12 +58,12 @@ class YouTubeShortsDetector : ShortFormContentDetector {
         Timber.v("Accessibility event type: ${event.className?.toString()}")
 
         var nodeCount = 0
-        while (queue.isNotEmpty() && nodeCount < 120) {
+        while (queue.isNotEmpty() && nodeCount < 300) {
             val node = queue.removeFirst()
             nodeCount++
 
             val id = node.viewIdResourceName?.lowercase()
-            if (id != null && "reel_progress_bar" in id) {
+            if (id != null && SHORTS_MARKERS.any { it in id }) {
                 Timber.d("[YouTube] Reels detected from id: $id")
                 return true
             }
@@ -75,5 +75,14 @@ class YouTubeShortsDetector : ShortFormContentDetector {
 
         Timber.v("[YouTube] No Shorts detected ($nodeCount nodes scanned)")
         return false
+    }
+
+    private companion object {
+        /** Identifiants du lecteur de Shorts. */
+        val SHORTS_MARKERS = listOf(
+            "reel_progress_bar",
+            "reel_player_page_container",
+            "reel_watch_player",
+        )
     }
 }
