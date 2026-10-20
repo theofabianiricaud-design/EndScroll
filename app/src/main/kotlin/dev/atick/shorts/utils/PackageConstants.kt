@@ -51,20 +51,4 @@ object PackageConstants {
     val DEFAULT_ENABLED_PACKAGES = AVAILABLE_PACKAGES
         .filter { it.isEnabled }
         .map { it.packageName }
-
-    /**
-     * Applis ou l'on peut couper ou desinstaller le bloqueur.
-     * Quand le verrou est ferme, toute page de ces applis qui affiche le nom du bloqueur est refermee.
-     */
-    val GUARDED_PACKAGES = listOf(
-        "com.android.settings",
-        "com.samsung.accessibility",
-        "com.samsung.android.settings",
-        "com.google.android.packageinstaller",
-        "com.android.packageinstaller",
-        "com.samsung.android.packageinstaller",
-        // Pas l'ecran d'accueil : l'icone du bloqueur y porte son nom.
-        // Desinstaller depuis l'icone passe par l'installateur, protege ci-dessus.
-        "com.android.vending",
-    )
 }
