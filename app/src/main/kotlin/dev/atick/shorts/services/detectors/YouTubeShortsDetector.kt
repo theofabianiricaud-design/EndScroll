@@ -61,6 +61,7 @@ class YouTubeShortsDetector : ShortFormContentDetector {
         while (queue.isNotEmpty() && nodeCount < 300) {
             val node = queue.removeFirst()
             nodeCount++
+            if (!node.isVisibleToUser) continue
 
             val id = node.viewIdResourceName?.lowercase()
             if (id != null && SHORTS_MARKERS.any { it in id }) {

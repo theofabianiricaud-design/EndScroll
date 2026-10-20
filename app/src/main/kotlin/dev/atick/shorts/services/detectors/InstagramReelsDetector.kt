@@ -18,6 +18,7 @@
 package dev.atick.shorts.services.detectors
 
 import android.content.res.Resources
+import android.graphics.Rect
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import timber.log.Timber
@@ -43,28 +44,35 @@ class InstagramReelsDetector : ShortFormContentDetector {
         rootNode: AccessibilityNodeInfo,
         resources: Resources,
     ): Boolean {
+        val screen = Rect().also { rootNode.getBoundsInScreen(it) }
         val stack = ArrayDeque<AccessibilityNodeInfo>()
         stack.add(rootNode)
         var nodesScanned = 0
-        var reelViewerSeen = false
+        var reelViewerId: String? = null
 
         while (stack.isNotEmpty() && nodesScanned < MAX_NODES) {
             val n = stack.removeFirst()
             nodesScanned++
+            // Instagram garde des ecrans charges mais caches (dont le lecteur de Reels) :
+            // seul ce qui est reellement affiche compte.
+            if (!n.isVisibleToUser) continue
             val id = n.viewIdResourceName?.substringAfter(":id/")
 
             if (id != null) {
                 // Dans une conversation : on laisse toujours passer
                 if (THREAD_MARKERS.any { it in id }) {
-                    Timber.v("[Instagram] Conversation ouverte, rien a bloquer")
+                    Timber.v("[Instagram] Conversation ouverte ($id), rien a bloquer")
                     return false
                 }
                 if (id == "clips_tab" && n.isSelected) {
                     Timber.i("[Instagram] Onglet Reels selectionne")
                     return true
                 }
-                if (REEL_VIEWER_MARKERS.any { id.startsWith(it) }) {
-                    reelViewerSeen = true
+                if (reelViewerId == null &&
+                    REEL_VIEWER_MARKERS.any { id.startsWith(it) } &&
+                    coversScreen(n, screen)
+                ) {
+                    reelViewerId = id
                 }
             }
 
@@ -73,10 +81,16 @@ class InstagramReelsDetector : ShortFormContentDetector {
             }
         }
 
-        if (reelViewerSeen) {
-            Timber.i("[Instagram] Lecteur de Reels detecte ($nodesScanned noeuds)")
+        if (reelViewerId != null) {
+            Timber.i("[Instagram] Lecteur de Reels plein ecran : $reelViewerId ($nodesScanned noeuds)")
         }
-        return reelViewerSeen
+        return reelViewerId != null
+    }
+
+    /** Vrai si l'element occupe presque tout l'ecran (un lecteur plein ecran, pas une vignette). */
+    private fun coversScreen(node: AccessibilityNodeInfo, screen: Rect): Boolean {
+        val r = Rect().also { node.getBoundsInScreen(it) }
+        return r.width() >= screen.width() * 0.9 && r.height() >= screen.height() * 0.7
     }
 
     private companion object {
