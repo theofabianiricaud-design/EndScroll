@@ -1,0 +1,11 @@
+EndScroll
+Copyright 2026 Théo Fabiani Ricaud
+
+This product is a modified version of Shorts Blocker
+(https://github.com/atick-faisal/Shorts-Blocker),
+Copyright 2025 Atick Faisal, licensed under the Apache License, Version 2.0.
+
+Modifications (2026): rewritten Instagram Reels detection, TikTok support,
+code lock with settings protection and emergency stop, removal of Firebase
+and network permissions, French user interface, new name, application id and icon.
+Modified source files are marked "Modifie en 2026" below their original copyright header.
