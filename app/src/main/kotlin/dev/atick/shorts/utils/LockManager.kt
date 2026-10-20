@@ -1,6 +1,8 @@
 package dev.atick.shorts.utils
 
 import android.content.Context
+import androidx.datastore.preferences.core.MutablePreferences
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -23,6 +25,7 @@ import javax.crypto.spec.PBEKeySpec
  * - [guardOpenUntil] : le bon code ouvre tout de suite, jusqu'a cette date, les protections
  *   hors d'Instagram (Parametres, desinstallation). Le blocage des Reels, lui,
  *   garde l'attente de [LockManager.WAIT_MS].
+ * - [emergencyUntil] : le code d'arret d'urgence coupe TOUT (Reels compris) jusqu'a cette date.
  */
 data class LockState(
     val hasCode: Boolean = false,
@@ -31,14 +34,19 @@ data class LockState(
     val failedAttempts: Int = 0,
     val blockedUntil: Long = 0L,
     val guardOpenUntil: Long = 0L,
+    val hasEmergencyCode: Boolean = false,
+    val emergencyUntil: Long = 0L,
 ) {
+    /** Vrai pendant un arret d'urgence : plus aucun blocage, nulle part. */
+    fun isEmergency(now: Long = System.currentTimeMillis()): Boolean = now < emergencyUntil
+
     /** Vrai quand les reglages sont proteges (code defini et hors fenetre de deverrouillage). */
     fun isLocked(now: Long = System.currentTimeMillis()): Boolean =
         hasCode && now !in unlockStartsAt until unlockEndsAt
 
     /** Vrai quand les pages des Parametres qui montrent EndScroll doivent etre refermees. */
     fun isGuardLocked(now: Long = System.currentTimeMillis()): Boolean =
-        isLocked(now) && now >= guardOpenUntil
+        isLocked(now) && now >= guardOpenUntil && !isEmergency(now)
 
     fun isWaitingForUnlock(now: Long = System.currentTimeMillis()): Boolean =
         hasCode && now < unlockStartsAt
@@ -64,6 +72,9 @@ class LockManager(private val context: Context) {
     private val failedKey = intPreferencesKey("lock.failed")
     private val blockedUntilKey = longPreferencesKey("lock.blocked_until")
     private val guardOpenUntilKey = longPreferencesKey("lock.guard_open_until")
+    private val emergencyHashKey = stringPreferencesKey("emergency.hash")
+    private val emergencySaltKey = stringPreferencesKey("emergency.salt")
+    private val emergencyUntilKey = longPreferencesKey("emergency.until")
 
     val state: Flow<LockState> = context.dataStore.data.map { p ->
         LockState(
@@ -73,6 +84,8 @@ class LockManager(private val context: Context) {
             failedAttempts = p[failedKey] ?: 0,
             blockedUntil = p[blockedUntilKey] ?: 0L,
             guardOpenUntil = p[guardOpenUntilKey] ?: 0L,
+            hasEmergencyCode = p[emergencyHashKey] != null,
+            emergencyUntil = p[emergencyUntilKey] ?: 0L,
         )
     }
 
@@ -116,7 +129,61 @@ class LockManager(private val context: Context) {
         }
     }
 
-    suspend fun tryUnlock(code: CharArray): UnlockResult {
+    // ---- Arret d'urgence ----
+
+    /** Definit (ou remplace) le code d'arret d'urgence. A n'appeler que si le verrou est ouvert. */
+    suspend fun setEmergencyCode(code: CharArray) {
+        val salt = ByteArray(SALT_BYTES).also { SecureRandom().nextBytes(it) }
+        val hash = derive(code, salt)
+        code.fill('\u0000')
+        context.dataStore.edit { p ->
+            p[emergencyHashKey] = b64(hash)
+            p[emergencySaltKey] = b64(salt)
+            p[emergencyUntilKey] = 0L
+        }
+        hash.fill(0)
+    }
+
+    /** Supprime le code d'arret d'urgence. A n'appeler que si le verrou est ouvert. */
+    suspend fun removeEmergencyCode() {
+        context.dataStore.edit { p ->
+            p.remove(emergencyHashKey)
+            p.remove(emergencySaltKey)
+            p[emergencyUntilKey] = 0L
+        }
+    }
+
+    /** Bon code d'urgence : tout est coupe tout de suite pour [EMERGENCY_MS]. */
+    suspend fun tryEmergency(code: CharArray): UnlockResult =
+        checkCode(code, emergencyHashKey, emergencySaltKey) { p, now ->
+            p[emergencyUntilKey] = now + EMERGENCY_MS
+            now
+        }
+
+    /** Reprend les blocages avant la fin de l'arret d'urgence. */
+    suspend fun endEmergency() {
+        context.dataStore.edit { p -> p[emergencyUntilKey] = 0L }
+    }
+
+    suspend fun tryUnlock(code: CharArray): UnlockResult =
+        checkCode(code, hashKey, saltKey) { p, now ->
+            val startsAt = now + WAIT_MS
+            p[unlockStartsKey] = startsAt
+            p[unlockEndsKey] = startsAt + OPEN_MS
+            p[guardOpenUntilKey] = now + GUARD_OPEN_MS
+            startsAt
+        }
+
+    /**
+     * Verifie un code contre le hache enregistre. Les deux codes partagent le meme compteur
+     * d'erreurs : 3 essais libres, puis une attente qui double.
+     */
+    private suspend fun checkCode(
+        code: CharArray,
+        hashK: Preferences.Key<String>,
+        saltK: Preferences.Key<String>,
+        onSuccess: (MutablePreferences, Long) -> Long,
+    ): UnlockResult {
         val now = System.currentTimeMillis()
         val current = state.first()
         if (now < current.blockedUntil) {
@@ -125,21 +192,19 @@ class LockManager(private val context: Context) {
         }
 
         val prefs = context.dataStore.data.first()
-        val storedHash = prefs[hashKey]?.let(::unb64)
-        val salt = prefs[saltKey]?.let(::unb64)
+        val storedHash = prefs[hashK]?.let(::unb64)
+        val salt = prefs[saltK]?.let(::unb64)
         val candidate = if (salt != null) derive(code, salt) else ByteArray(0)
         code.fill('\u0000')
         val ok = storedHash != null && MessageDigest.isEqual(storedHash, candidate)
         candidate.fill(0)
 
         return if (ok) {
-            val startsAt = now + WAIT_MS
+            var startsAt = now
             context.dataStore.edit { p ->
                 p[failedKey] = 0
                 p[blockedUntilKey] = 0L
-                p[unlockStartsKey] = startsAt
-                p[unlockEndsKey] = startsAt + OPEN_MS
-                p[guardOpenUntilKey] = now + GUARD_OPEN_MS
+                startsAt = onSuccess(p, now)
             }
             UnlockResult.Accepted(startsAt)
         } else {
@@ -176,6 +241,9 @@ class LockManager(private val context: Context) {
 
         /** Duree pendant laquelle les Parametres sont libres, des le bon code. */
         const val GUARD_OPEN_MS = 15 * 60_000L
+
+        /** Duree d'un arret d'urgence : plus aucun blocage, nulle part. */
+        const val EMERGENCY_MS = 15 * 60_000L
 
         private const val ITERATIONS = 210_000
         private const val KEY_BITS = 256

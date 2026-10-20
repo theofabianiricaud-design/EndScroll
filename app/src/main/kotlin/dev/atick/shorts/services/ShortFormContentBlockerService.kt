@@ -49,7 +49,8 @@ import java.util.concurrent.ConcurrentHashMap
  *  - renvoie en arriere des qu'un Reel ou un Short s'affiche (TikTok : retour a l'accueil) ;
  *  - verrou ferme : referme toute page des Parametres ou de l'installateur qui affiche
  *    le nom du bloqueur, et ouvre EndScroll pour entrer le code. Le bon code libere
- *    ces pages tout de suite pour 15 minutes.
+ *    ces pages tout de suite pour 15 minutes ;
+ *  - arret d'urgence (code a part) : plus aucun blocage, nulle part, pendant 15 minutes.
  *
  * Rien n'est enregistre ni envoye : l'ecran est lu en memoire puis oublie.
  */
@@ -119,6 +120,8 @@ class ShortFormContentBlockerService : AccessibilityService() {
                 )
         if (!relevant) return
         val packageName = event.packageName?.toString() ?: return
+        // Arret d'urgence : on ne touche a rien
+        if (lockState.isEmergency()) return
 
         if (packageName in PackageConstants.GUARDED_PACKAGES) {
             guardSettings(packageName)

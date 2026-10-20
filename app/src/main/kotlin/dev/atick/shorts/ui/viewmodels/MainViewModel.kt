@@ -204,6 +204,56 @@ class MainViewModel(
         }
     }
 
+    // ---- Arret d'urgence ----
+
+    /** Choisir ou changer le code d'urgence demande le verrou ouvert, sinon il servirait a le contourner. */
+    fun setEmergencyCode(code: CharArray, confirmation: CharArray) {
+        try {
+            when {
+                isLocked -> say("Verrouillé : déverrouille d'abord pour définir le code d'urgence.")
+                code.size < LockManager.MIN_CODE_LENGTH ->
+                    say("Le code d'urgence doit faire au moins ${LockManager.MIN_CODE_LENGTH} caractères.")
+                !code.contentEquals(confirmation) -> say("Les deux codes ne sont pas identiques.")
+                else -> {
+                    val copy = code.copyOf()
+                    viewModelScope.launch {
+                        lockManager.setEmergencyCode(copy)
+                        say("Code d'arrêt d'urgence enregistré.")
+                    }
+                }
+            }
+        } finally {
+            code.fill('\u0000')
+            confirmation.fill('\u0000')
+        }
+    }
+
+    fun tryEmergency(code: CharArray) {
+        val copy = code.copyOf()
+        code.fill('\u0000')
+        viewModelScope.launch {
+            when (lockManager.tryEmergency(copy)) {
+                is UnlockResult.Accepted -> say(
+                    "Arrêt d'urgence : plus aucun blocage pendant ${LockManager.EMERGENCY_MS / 60_000} minutes.",
+                )
+                is UnlockResult.Rejected -> say("Code d'urgence faux.")
+                is UnlockResult.TooSoon -> say("Trop d'erreurs : attends la fin du blocage.")
+            }
+        }
+    }
+
+    fun endEmergency() {
+        viewModelScope.launch { lockManager.endEmergency() }
+    }
+
+    fun removeEmergencyCode() {
+        if (isLocked) return
+        viewModelScope.launch {
+            lockManager.removeEmergencyCode()
+            say("Code d'arrêt d'urgence supprimé.")
+        }
+    }
+
     fun relock() {
         viewModelScope.launch { lockManager.relock() }
     }

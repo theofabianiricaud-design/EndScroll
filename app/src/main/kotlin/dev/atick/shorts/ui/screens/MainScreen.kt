@@ -143,6 +143,7 @@ fun MainScreen(
             }
 
             LockSection(state = state, viewModel = viewModel)
+            EmergencySection(state = state, viewModel = viewModel)
 
             if (state.isGranted && !state.lock.isLocked(state.now)) {
                 OutlinedButton(
@@ -325,6 +326,96 @@ private fun OpenContent(state: ServiceState, viewModel: MainViewModel) {
     ChooseCodeFields(viewModel)
     TextButton(onClick = viewModel::removeCode, modifier = Modifier.fillMaxWidth()) {
         Text("Supprimer le code", color = MaterialTheme.colorScheme.error)
+    }
+}
+
+@Composable
+private fun EmergencySection(state: ServiceState, viewModel: MainViewModel) {
+    val lock = state.lock
+    val now = state.now
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = "Arrêt d'urgence",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+            )
+            when {
+                lock.isEmergency(now) -> {
+                    Text(
+                        "Tout est coupé, Instagram compris, encore ${formatDuration(lock.emergencyUntil - now)}.",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    Button(onClick = viewModel::endEmergency, modifier = Modifier.fillMaxWidth()) {
+                        Text("Reprendre les blocages maintenant")
+                    }
+                }
+                !lock.hasEmergencyCode -> {
+                    Text(
+                        "Un code à part, qui coupe tous les blocages (Instagram, Paramètres, désinstallation) " +
+                            "tout de suite, pendant ${LockManager.EMERGENCY_MS / 60_000} minutes. " +
+                            "Pour un souci, pas pour regarder des Reels.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (lock.isLocked(now)) {
+                        Text(
+                            "Déverrouille d'abord le verrou pour le définir.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    } else {
+                        EmergencyCodeFields(viewModel, "Enregistrer le code d'urgence")
+                    }
+                }
+                now < lock.blockedUntil -> Text(
+                    "Trop d'erreurs. Nouvel essai dans ${formatDuration(lock.blockedUntil - now)}.",
+                    color = MaterialTheme.colorScheme.error,
+                )
+                else -> {
+                    var code by remember { mutableStateOf("") }
+                    SecretField(value = code, onValueChange = { code = it }, label = "Code d'urgence")
+                    Button(
+                        onClick = {
+                            viewModel.tryEmergency(code.toCharArray())
+                            code = ""
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text("Tout couper ${LockManager.EMERGENCY_MS / 60_000} minutes")
+                    }
+                    if (!lock.isLocked(now)) {
+                        EmergencyCodeFields(viewModel, "Changer le code d'urgence")
+                        TextButton(onClick = viewModel::removeEmergencyCode, modifier = Modifier.fillMaxWidth()) {
+                            Text("Supprimer le code d'urgence", color = MaterialTheme.colorScheme.error)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmergencyCodeFields(viewModel: MainViewModel, buttonText: String) {
+    var code by remember { mutableStateOf("") }
+    var confirmation by remember { mutableStateOf("") }
+    SecretField(value = code, onValueChange = { code = it }, label = "Nouveau code d'urgence")
+    SecretField(value = confirmation, onValueChange = { confirmation = it }, label = "Confirmer")
+    OutlinedButton(
+        onClick = {
+            viewModel.setEmergencyCode(code.toCharArray(), confirmation.toCharArray())
+            code = ""
+            confirmation = ""
+        },
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Text(buttonText)
     }
 }
 
